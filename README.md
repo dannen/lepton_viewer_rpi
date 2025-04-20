@@ -16,148 +16,214 @@ It includes features like multiple colormaps (built-in, custom generated gradien
 * Power saving mode: Stops the UVC stream and sets CPU governor to `powersave` when the display is toggled OFF; restarts stream and sets governor to `ondemand` when turned ON.
 * CPU temperature monitoring: Logs CPU temperature periodically and triggers an automatic shutdown if it exceeds a configurable threshold.
 * Colormap Support:
-    * Includes standard OpenCV colormaps (HOT, BONE, COOL, OCEAN, VIRIDIS).
+    * Includes standard OpenCV colormaps (HOT, BONE, COOL, OCEAN, VIRIDIS, etc.).
     * Generates custom gradient colormaps (RED\_GRADIENT, GREEN\_GRADIENT, BLUE\_GRADIENT).
-    * Loads custom colormaps from external `.lut` files placed in the script's directory.
-* File logging: Logs script events, warnings, and errors to `/var/log/thermal_viewer.log` (or falls back to `./thermal_viewer.log` if permissions fail).
+    * Loads custom colormaps from external `.lut` files placed in the script's directory. (Format: Text file containing a Python-style list of 256 RGB tuples, e.g., `[(0,0,0), (1,1,1), ..., (255,255,255)]`).
+* File logging: Logs script events, warnings, and errors to `/var/log/thermal_viewer.log` (or falls back to `./thermal_viewer.log` if permissions fail) with a standard format.
 
 ## Hardware Requirements
 
-* **Raspberry Pi:** Model 3B, 3B+, or 4B recommended.
+* **Raspberry Pi:** Model 3B, 3B+, or 4B recommended. (Pi 3 Model B offers lower power than 3B+).
 * **Display:** Adafruit Mini PiTFT 1.3" 240x240 Color Display (ST7789 driver).
     * [Product Link](https://www.adafruit.com/product/4484)
 * **Camera:**
     * FLIR Lepton module (e.g., Lepton 2.5, 3.0, 3.5).
-    * UVC-compatible interface board (e.g., PureThermal 1/2/Mini, GroupGets USB Breakout v2). The script assumes the default PureThermal VID/PID (`0x1e4e`/`0x0100`), which can be configured.
-* **Wiring:** Correct SPI wiring for the Mini PiTFT to the Raspberry Pi GPIO header. Default pins are configured in the script (see Configuration section). Ensure power supply is adequate for the Pi, display, and camera board.
+    * UVC-compatible interface board (e.g., PureThermal 1/2/Mini, GroupGets USB Breakout v2). Script uses default PureThermal VID/PID (`0x1e4e`/`0x0100`).
+* **SD Card:** 8GB or larger, flashed with Raspberry Pi OS.
+* **Power Supply:**
+    * A reliable 5V, >=2.5A power supply for the Raspberry Pi.
+    * **Optional:** [PiJuice HAT](https://uk.pi-supply.com/products/pijuice-standard) with a suitable battery (e.g., BP7X) for portability. The script works with the PiJuice providing power.
+* **USB Cable:** USB-A to USB-C or Micro-USB cable suitable for connecting the PureThermal board to the Pi.
 
 ## Compatibility
 
-* **Tested:** Raspberry Pi 3B+, Raspberry Pi 4B.
-* **Known Issues:** This script has been tested and does **not** work correctly on Raspberry Pi Zero 2 W or Orange Pi Zero 2 W, likely due to hardware limitations, UVC handling, or other incompatibilities encountered during testing.
+* **Tested:** Raspberry Pi 3 Model B, Raspberry Pi 3 Model B+. (Should work on Pi 4B).
+* **Known Issues:** This script has shown issues or failed on Raspberry Pi Zero 2 W and Orange Pi Zero 2 W, likely due to hardware limitations, UVC handling, or GPIO library incompatibilities on those specific platforms/OS versions.
 
 ## Software Dependencies
 
 ### Python Modules (Install via pip)
 
-* `numpy` (<2.0 recommended for broader OpenCV compatibility)
+* `numpy` (<2.0 recommended for OpenCV compatibility)
 * `opencv-python` (cv2)
-* `adafruit-circuitpython-rgb-display`
-* `adafruit-circuitpython-busdevice`
 * `Pillow` (PIL)
-* `uvctypes.py`: This file (not a pip package) contains Python bindings for libuvc. It needs to be placed in the same directory as the main script. You can obtain it from sources like the [PureThermal1 UVC Capture repository](https://github.com/groupgets/purethermal1-uvc-capture/blob/master/python/uvctypes.py).
+* `Adafruit-Blinka`
+* `adafruit-circuitpython-rgb-display`
+* `adafruit-circuitpython-busdevice` (usually installed as dependency)
+* `uvctypes.py`: (Not a pip package) Python bindings for libuvc. Place in the same directory as the main script. Get from [PureThermal1 UVC Capture repository](https://github.com/groupgets/purethermal1-uvc-capture/blob/master/python/uvctypes.py).
 
 ### Debian Packages (Install via apt)
 
 * `python3`
 * `python3-pip`
+* `python3-venv`
 * `git`
 * `cmake`
 * `build-essential`
 * `pkg-config`
 * `libusb-1.0-0-dev` (Required for building `libuvc`)
-* `libuvc-dev` (Provides the `libuvc.so` library - installation via build is often required)
+* `python3-dev` (or `python3.X-dev` matching your version, for building some pip packages)
 * `cpufrequtils` (Provides `cpufreq-set` for CPU governor control)
+* `libjpeg-dev`, `zlib1g-dev` (Common dependencies for Pillow)
+* `libopencv-dev` (Optional, if building OpenCV from source, not needed if using `opencv-python` pip package)
+* `pijuice-base` (Optional, only if you want to interact with PiJuice via software)
 
 ## Installation
 
+These steps assume you are starting with a relatively fresh Raspberry Pi OS (Bullseye or Bookworm recommended) and are logged in as the default `pi` user (or equivalent).
+
 1.  **Update System:**
     ```bash
-    sudo apt update && sudo apt full-upgrade -y
+    sudo apt update
+    sudo apt full-upgrade -y
+    # Consider rebooting if kernel or firmware was updated
+    # sudo reboot 
     ```
-2.  **Install Debian Packages:**
+
+2.  **Install System Dependencies:**
     ```bash
-    sudo apt install -y python3 python3-pip git cmake build-essential pkg-config libusb-1.0-0-dev cpufrequtils
+    sudo apt install -y python3-pip python3-venv git cmake build-essential pkg-config libusb-1.0-0-dev python3-dev cpufrequtils libjpeg-dev zlib1g-dev
     ```
-3.  **Install/Build `libuvc`:**
-    *(Option A: Try installing package - may not be available or up-to-date)*
+    *(Note: Adjust `python3-dev` to `python3.11-dev` or similar if needed for your specific OS version).*
+
+3.  **Install/Build `libuvc` (GroupGets Fork Recommended):**
     ```bash
-    # sudo apt install libuvc-dev # Try this first, if it fails or causes issues, use Option B
-    ```
-    *(Option B: Build from source - Recommended)*
-    ```bash
-    git clone [https://github.com/libuvc/libuvc.git](https://github.com/libuvc/libuvc.git)
+    cd ~ 
+    git clone [https://github.com/groupgets/libuvc](https://github.com/groupgets/libuvc)
     cd libuvc
     mkdir build
     cd build
-    cmake .. -DBUILD_EXAMPLE=OFF # Optionally disable examples
-    make
+    cmake ..
+    make -j$(nproc) 
     sudo make install
-    sudo ldconfig -v # Update library cache
-    cd ../.. # Go back to your original directory
+    sudo ldconfig 
+    cd ~ # Return home
     ```
-4.  **Enable SPI:**
+
+4.  **Enable SPI Interface:**
     ```bash
     sudo raspi-config
     ```
-    Navigate to `Interface Options` -> `SPI` -> `Yes` to enable. Finish and reboot if prompted.
+    Navigate to `Interface Options` -> `SPI` -> `<Yes>` to enable. Finish and reboot if prompted.
 
-5.  **Install Python Modules:**
+5.  **Create Python Virtual Environment:**
     ```bash
-    sudo pip3 install --upgrade pip
-    # Install specific numpy version (<2.0) first if needed for OpenCV compatibility
-    sudo pip3 install "numpy<2.0"
-    # Install other required packages
-    sudo pip3 install Pillow adafruit-circuitpython-rgb-display adafruit-circuitpython-busdevice opencv-python
+    cd ~
+    python3 -m venv lepton_env 
+    source ~/lepton_env/bin/activate
     ```
-    *(Note: Using `sudo pip3` installs packages globally. Consider using a virtual environment for better dependency management if preferred.)*
+    *(Your prompt should now start with `(lepton_env)`)*.
 
-6.  **Get Files:**
-    * Download or clone the main script (`lepton_viewer_rpi3.py`).
-    * Download `uvctypes.py` (see Python Modules section above) and place it in the same directory.
-    * Place any custom `.lut` files (like `ironblack.lut`) in the same directory.
-    * Make the main script executable: `chmod +x lepton_viewer_rpi3.py`
+6.  **Install Python Packages (inside venv):**
+    ```bash
+    # Upgrade pip in venv
+    pip install --upgrade pip setuptools wheel
 
-7.  **Permissions:**
-    * **UVC Device:** Your user (`pi` by default) needs permission to access the camera device (`/dev/videoX`). Add your user to the `video` group:
+    # Install required libraries
+    pip install "numpy<2.0" 
+    pip install opencv-python 
+    pip install Pillow
+    pip install Adafruit-Blinka 
+    pip install adafruit-circuitpython-rgb-display 
+    ```
+    * **Blinka Prompts:** When installing `Adafruit-Blinka`, it might prompt you to install system packages like `python3-rpi.gpio`, `python3-spidev`. Confirm these if prompted. It might also ask to reboot.
+
+7.  **Setup USB Permissions (Camera):**
+    Create a udev rule to allow access to the PureThermal device.
+    ```bash
+    echo 'SUBSYSTEM=="usb", ATTR{idVendor}=="1e4e", ATTR{idProduct}=="0100", MODE="0666", GROUP="video"' | sudo tee /etc/udev/rules.d/99-purethermal.rules
+    sudo udevadm control --reload-rules && sudo udevadm trigger
+    # Add your user to the video group (if not already)
+    sudo usermod -aG video $USER 
+    ```
+    **Log out and log back in** for the group change to take effect.
+
+8.  **Get Code Files:**
+    * Clone the repository `git clone https://github.com/dannen/lepton_viewer_rpi`
+    * Download `uvctypes.py` into the same directory:
         ```bash
-        sudo usermod -a -G video $USER
+        wget [https://raw.githubusercontent.com/groupgets/purethermal1-uvc-capture/master/python/uvctypes.py](https://raw.githubusercontent.com/groupgets/purethermal1-uvc-capture/master/python/uvctypes.py)
         ```
-        You may need to log out and log back in for this to take effect. Alternatively, create a udev rule (see Troubleshooting).
-    * **GPIO:** Accessing GPIO pins typically requires root privileges. Running the script with `sudo` is the simplest way.
-    * **CPU Governor:** The script uses `sudo cpufreq-set`. Running the main script with `sudo` handles this.
-    * **Logging:** To write to `/var/log/thermal_viewer.log`, the script needs write permission in `/var/log`. Running with `sudo` grants this. If run without `sudo` and permissions fail, it will log to `./thermal_viewer.log` instead.
+    * Place any custom `.lut` files in this directory. (see my other project for luts and futher ideas https://github.com/dannen/boson_lut.git)
 
 ## Configuration
 
-Several parameters can be adjusted directly in the Python script near the top:
+Several parameters can be adjusted directly in the Python script (`lepton_viewer.py`) near the top:
 
 * **Camera:** `CAM_WIDTH`, `CAM_HEIGHT`, `CAM_FPS`, `PT_VID`, `PT_PID`.
 * **Display:** `LCD_WIDTH`, `LCD_HEIGHT`, `LCD_ROTATION`, `X_OFFSET`, `Y_OFFSET`, `SPI_BAUDRATE`.
-* **Pins:** `SPI_SCK`, `SPI_MOSI`, `SPI_CS`, `DC_PIN`, `BACKLIGHT_PIN`, `BUTTON_A_PIN`, `BUTTON_B_PIN`. Ensure these match your wiring.
+* **Pins:** `BUTTON_A_PIN`, `BUTTON_B_PIN` (uses Blinka `board` names).
 * **CPU:** `CPU_GOVERNOR_SAVE`, `CPU_GOVERNOR_RUN`.
-* **Temperature:** `CPU_TEMP_SHUTDOWN_THRESHOLD_C`.
-* **Logging:** `LOG_FILENAME`, `LOG_LEVEL` (e.g., `logging.INFO`, `logging.DEBUG`).
+* **Temperature:** `CPU_TEMP_SHUTDOWN_THRESHOLD_C`, check/log intervals.
+* **Logging:** `LOG_FILENAME`, `LOG_LEVEL`.
 
-## Running the Script
+## Optional Power Saving Configuration (`config.txt`)
 
-Navigate to the directory containing the script and `uvctypes.py`:
+For additional power saving, especially when running headless or without Bluetooth, you can edit `/boot/firmware/config.txt` (`sudo nano /boot/firmware/config.txt`) and append the following lines:
 
+```
+# Disable wifi (leave this disabled until you're certain)
+#dtoverlay=disable-wifi
+
+# Disable Bluetooth (if not needed)
+dtoverlay=disable-bt
+
+# Disable HDMI output (if not needed)
+hdmi_blanking=2
+
+# Disable onboard LEDs (optional)
+dtparam=pwr_led_trigger=none
+dtparam=pwr_led_activelow=off
+dtparam=act_led_trigger=none
+dtparam=act_led_activelow=off
+```
+
+A reboot is required for these settings to take effect.
+
+## Running the Application
+### Method 1: Manually (for testing)
+Activate the virtual environment: source ~/lepton_env/bin/activate
+Navigate to the code directory: cd ~/thermal_viewer
+Run using sudo (required for cpufreq-set and shutdown):
 ```bash
-cd /path/to/your/script_directory
+sudo /home/pi/lepton_env/bin/python3 ./lepton_viewer.py
+```
+Press Ctrl+C to exit.
+### Method 2: As a Systemd Service (Recommended for auto-start)
+Create Service File:
+```bash
+sudo cp ~/lepton_viewer_rpi/lepton_viewer.service /etc/systemd/system/lepton_viewer.service
+```
 
-Run using sudo to ensure necessary permissions:
-Bash
+Reload, Enable, Start:
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable lepton_viewer.service
+sudo systemctl start lepton_viewer.service
+```
 
-sudo python3 ./lepton_viewer_rpi3.py
+Check Status/Logs:
+```bash
+sudo systemctl status lepton_viewer.service
+journalctl -u lepton_viewer.service -f 
+```
 
-Press Ctrl+C to exit gracefully.
+Reboot to test auto-start.
 
-(Optional: Consider setting up a systemd service to run the script automatically on boot.)
-Usage
+## Usage
 
     Button A (Default GPIO 23): Press briefly to cycle through the available colormaps (Defaults -> Gradients -> File LUTs -> back to start).
     Button B (Default GPIO 24): Press briefly to toggle the display backlight ON or OFF.
         When OFF: Stream stops, CPU governor set to powersave.
         When ON: Stream starts, CPU governor set to ondemand.
 
-Logging
+## Logging
 
     Logs are written to /var/log/thermal_viewer.log by default (if permissions allow) or ./thermal_viewer.log otherwise.
     Log format includes timestamp, hostname, process name/PID, log level, and message.
     Set LOG_LEVEL in the script to logging.DEBUG for more detailed output during troubleshooting.
 
-Troubleshooting
+## Troubleshooting
 
     Permission Denied (UVC / dev/videoX): Ensure your user is in the video group (see Installation Step 7) or create a udev rule. Example rule (/etc/udev/rules.d/99-purethermal.rules):
     Code snippet
