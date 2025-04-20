@@ -240,6 +240,16 @@ Reboot to test auto-start.
     Display Not Working: Check wiring, ensure SPI is enabled (sudo raspi-config), verify pin definitions in the script match wiring.
     Low FPS: Some processing overhead is expected. Ensure the CPU governor switches to ondemand or performance when the display is active. Close other CPU-intensive applications.
 
+## Case
+
+   I am presently designing a case.
+   
+## Lepton Protection 
+   Add a ZnSe laser lens as a protective filter for the Lepton.  
+   (https://a.co/d/3f0fkHj)
+   Glass and plastic are not transparent to Infrared but ZnSe is.
+   
+
 License
 
 This project is released under the MIT License.
