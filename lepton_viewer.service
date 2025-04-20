@@ -1,0 +1,31 @@
+[Unit]
+Description=Lepton Thermal Viewer Service
+# Wait for multi-user target and potentially PiJuice service
+After=multi-user.target pijuice.service
+Wants=pijuice.service
+
+[Service]
+# Run as the 'pi' user (adjust if using a different username)
+# Ensure this user is in the spi, i2c, gpio, video groups!
+User=root
+Group=root
+
+# Set the working directory to where your script and uvctypes.py are
+# *** UPDATED WorkingDirectory to /home/pi ***
+WorkingDirectory=/home/pi
+
+# Command to execute: Full path to CORRECT venv python + full path to script
+# Assuming script is in /home/pi now
+ExecStart=/home/pi/lepton-env/bin/python3 /home/pi/lepton_viewer_rpi3.py
+
+# Restart the service if it fails
+Restart=on-failure
+RestartSec=5
+
+# Redirect standard output and error to the systemd journal
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+# Enable the service for the default multi-user target
+WantedBy=multi-user.target
